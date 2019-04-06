@@ -4,16 +4,14 @@ import pprint
 
 class RandomPlayer(BasePokerPlayer):
 
+  # def __init__(self):
+  #   BasePokerPlayer.__init__(self)
+  #   self.round_count = 0
+
   def declare_action(self, valid_actions, hole_card, round_state):
-    # valid_actions format => [raise_action_pp = pprint.PrettyPrinter(indent=2)
-    #pp = pprint.PrettyPrinter(indent=2)
-    #print("------------ROUND_STATE(RANDOM)--------")
-    #pp.pprint(round_state)
-    #print("------------HOLE_CARD----------")
-    #pp.pprint(hole_card)
-    #print("------------VALID_ACTIONS----------")
-    #pp.pprint(valid_actions)
-    #print("-------------------------------")
+    print("Random Player")
+    print("Valid Actions : ")
+    pprint.pprint(valid_actions)
     r = rand.random()
     if r <= 0.5:
       call_action_info = valid_actions[1]
@@ -22,12 +20,20 @@ class RandomPlayer(BasePokerPlayer):
     else:
       call_action_info = valid_actions[0]
     action = call_action_info["action"]
+    print("Taken Actions : ")
+    pprint.pprint(action)
     return action  # action returned here is sent to the poker engine
 
   def receive_game_start_message(self, game_info):
+    # print("\n\n")
+    # pprint.pprint(game_info)
+    # print("---------------------------------------------------------------------")
     pass
 
   def receive_round_start_message(self, round_count, hole_card, seats):
+    # print("My ID : "+self.uuid+", round count : "+str(round_count)+", hole card : "+str(hole_card))
+    # pprint.pprint(seats)
+    print("-------------------------------")
     pass
 
   def receive_street_start_message(self, street, round_state):
@@ -37,6 +43,13 @@ class RandomPlayer(BasePokerPlayer):
     pass
 
   def receive_round_result_message(self, winners, hand_info, round_state):
+    # print("My ID (round result) : "+self.uuid)
+    # pprint.pprint(round_state)
+    # print("\n\n")
+    # self.round_count = self.round_count + 1
+    print("Random Player")
+    pprint.pprint(hand_info)
+    print('\n')
     pass
 
 def setup_ai():

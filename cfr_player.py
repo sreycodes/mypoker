@@ -5,185 +5,272 @@ sys.path.insert(0, './pypokerengine/api/')
 import game
 import operator
 from pypokerengine.api.emulator import Emulator
-from pypokerengine.engine.dealer import Dealer
-from pypokerengine.engine.message_builder import MessageBuilder
+from pypokerengine.engine.hand_evaluator import HandEvaluator
 from pypokerengine.engine.poker_constants import PokerConstants as Const
-from pypokerengine.engine.round_manager import RoundManager
-from pypokerengine.engine.table import Table
 from pypokerengine.players import BasePokerPlayer
+from pypokerengine.engine.card import Card
+from randomplayer import RandomPlayer
 import pprint
 pp = pprint.PrettyPrinter(indent=2)
 import random
-from randomplayer import RandomPlayer
+import pickle
+from os import path
+from multiprocessing import Pool
 
-class CFRPlayer(BasePokerPlayer):
+def pause():
+  _ = input("Press any key to continue\n")
+  pass
 
-  def __init__(self, name="CFR", train=False):
-    self.name = name
-    self.player_index = 0
-    self.imap = {}
-    self.emulator = None
-    if(train):
-      self.train(1)
+class Node:
 
-  def declare_action(self, valid_actions, hole_card, round_state):
-    strategy = self.imap.get(str(hole_card) + str(round_state))
-    print(strategy)
-    if strategy == None:
-      return random.choice(valid_actions)["action"]
+  def __init__(self, parent, to_move, actions, actions_history):
+    self.parent = parent
+    self.to_move = to_move
+    self.actions = actions
+    self.actions_history = actions_history
+    self.children = {}
+
+  def play(self, action):
+    return self.children[action]
+
+  def is_chance(self):
+    return type(self.to_move) == str and self.to_move.upper() == "CHANCE"
+
+  def inf_set(self):
+    raise NotImplementedError("Please implement information_set method")
+
+class RootChanceNode(Node):
+
+  def __init__(self):
+    super().__init__(parent=None, to_move="CHANCE", actions=["P", "S", "N"], actions_history = [])
+
+  def add_child(self, game_state, emulator, reach_a, reach_b):
+    hole_card = game_state['table'].seats.players[0].hole_card
+    card1, card2 = hole_card
+    if card1.is_pair(card2):
+      if "PAIRED" not in self.children.keys():
+        self.children["PAIRED"] = PlayerNode(self, game_state['next_player'], ["PAIRED"], 
+          [action['action'] for action in emulator.generate_possible_actions(game_state)])
+      self.children["PAIRED"].add_child(game_state, emulator, reach_a, reach_b)
+    elif card1.is_suited(card2):
+      if "SUITED" not in self.children.keys():
+          self.children["SUITED"] = PlayerNode(self, game_state['next_player'], ["SUITED"], 
+            [action['action'] for action in emulator.generate_possible_actions(game_state)])
+      self.children["SUITED"].add_child(game_state, emulator, reach_a, reach_b)
     else:
-      return max(strategy.get_average_strategy.iteritems(), key=operator.itemgetter(1))[0]['action']
+      if "NA" not in self.children.keys():
+        self.children["NA"] = PlayerNode(self, game_state['next_player'], ["NA"], 
+          [action['action'] for action in emulator.generate_possible_actions(game_state)])
+      self.children["NA"].add_child(game_state, emulator, reach_a, reach_b)
 
-  def receive_game_start_message(self, game_info):
-    pass
+  def is_terminal(self):
+    return False
 
-  def receive_round_start_message(self, round_count, hole_card, seats):
-    pass
+  def inf_set(self):
+    return ""
 
-  def receive_street_start_message(self, street, round_state):
-    pass
+  def sample_one(self):
+    return random.choice(list(self.children.values()))
 
-  def receive_game_update_message(self, action, round_state):
-    pass
+  def chance_prob(self):
+    return (1 / len(self.actions))
 
-  def receive_round_result_message(self, winners, hand_info, round_state):
-    pass
+  def compute_nash_equilibrium(self):
+    for child in self.children.values():
+      child.compute_nash_equilibrium()
 
-  def __parse_ask_message(self, message):
-    hole_card = message["hole_card"]
-    valid_actions = message["valid_actions"]
-    round_state = message["round_state"]
-    return valid_actions, hole_card, round_state
+class ComChanceNode(Node):
 
-  def setup_game(self, player1, player2):
-    # # Init for one game
-    # max_round = 1
-    # initial_stack = 10000
-    # smallblind_amount = 10
-    # # Init pot of players
-    # agent1_pot = 0
-    # agent2_pot = 0
-    # # Setting configuration
-    # config = game.setup_config(max_round=max_round, initial_stack=initial_stack, small_blind_amount=smallblind_amount)
-    # # Register players
-    # config.register_player(name=player1.name, algorithm=player1)
-    # config.register_player(name="Random", algorithm=player2)
-    # config.validation()
-    # dealer = Dealer(config.sb_amount, config.initial_stack, config.ante)
-    # dealer.set_verbose(2)
-    # dealer.set_blind_structure(config.blind_structure)
-    # for info in config.players_info:
-    #     dealer.register_player(info["name"], info["algorithm"])
-    # table = dealer.table
-    # ante, sb_amount = dealer.ante, dealer.small_blind_amount
-    # if 1 in dealer.blind_structure:
-    #   update_info = dealer.blind_structure[round_count]
-    #   ante, sb_amount = update_info["ante"], update_info["small_blind"]    
-    # table.set_blind_pos(0, 1)
-    # if table.seats.players[table.dealer_btn].stack == 0: table.shift_dealer_btn()
-    # start_state, msgs = RoundManager.start_new_round(1, smallblind_amount, ante, table)
-    # return start_state
-    table = Table()
-    table.seats.sitdown(player1)
-    table.seats.sitdown(player2)
-    table.dealer_btn = len(table.seats.players)-1
-    return {
-      "round_count": 0,
-      "small_blind_amount": 10,
-      "street": Const.Street.PREFLOP,
-      "next_player": None,
-      "table": table
-    }
+  def __init__(self, parent, actions_history):
+    super().__init__(parent=parent, to_move="CHANCE", actions=["HC", "OP", "TP", "TC", "S", "F", "FH", "FC", "SF"],
+      actions_history=actions_history)
+    self._information_set = "".join(self.actions_history)
 
-  def train(self, num_iterations):
-    print("Training")
-    player1 = self
-    player2 = self
-    self.emulator = Emulator()
-    self.emulator.set_game_rule(2, 10, 10, 0)
-    self.emulator.register_player("cfr1", player1)
-    self.emulator.register_player("cfr2", player2)
-    util = 0
-    for i in range(num_iterations):
-      print("Iteration " + str(i))
-      start_state, e = self.emulator.start_new_round(self.emulator.generate_initial_game_state({"cfr1": {"stack": 1000, "name": self.name}, "cfr2 ": {"stack": 1000, "name": "Random"}}))
-      # print("Starting state: ")
-      # pp.pprint(start_state)
-      # pp.pprint(self.emulator.generate_possible_actions(start_state))
-      # pp.pprint([p for p in start_state['table'].seats.players if p.name == self.name][0].hole_card)
-      util += self.cfr(self.emulator.generate_possible_actions(start_state), [p for p in start_state['table'].seats.players if p.name == self.name][0].hole_card, start_state, 1, 1)
-      print(util)
-    print("Average game value: " + str(util / num_iterations))
-    self = player1
+  def add_child(self, game_state, emulator, reach_a, reach_b):
+    hole_card = game_state['table'].seats.players[0].hole_card
+    community_cards = game_state['table']._community_card
+    strength = HandEvaluator.gen_hand_rank_info(hole_card, community_cards)['hand']['strength']
+    # print(strength)
+    # print(self.children.keys())
+    if strength not in self.children.keys():
+      self.children[strength] = PlayerNode(self, game_state['next_player'], self.actions_history + [strength],
+        [action['action'] for action in emulator.generate_possible_actions(game_state)])
+    return self.children[strength].add_child(game_state, emulator, reach_a, reach_b)
 
-  def cfr(self, valid_actions, hole_card, round_state, my_prob, opp_prob):
-    print("------------ROUND_STATE(RANDOM)--------")
-    pp.pprint(round_state)
-    pp.pprint(valid_actions)
-    pp.pprint(hole_card)
-    if(round_state['street'] == Const.Street.FINISHED):
-      print("This is a terminal state")
-      return [p for p in round_state['table'].seats.players if p.name == self.name][0].stack - 1000
-    info_set = self.imap.get(str(hole_card) + str(round_state))
-    if info_set == None:
-      print("Creating new info set")
-      info_set = InfoSet(info=str(hole_card) + str(round_state), valid_actions=valid_actions)
-      self.imap[str(hole_card) + str(round_state)] = info_set
-    strategy = info_set.get_strategy(opp_prob if round_state['next_player'] == 0 else my_prob)
-    util = defaultdict(int)
-    info_set_util = 0
-    random.shuffle(valid_actions)
-    for action in valid_actions:
-      print("Player decided to " + action["action"])
-      next_round_state, messages = self.emulator.apply_action(round_state, action['action'])
-      # print("Next state: ")
-      # pp.pprint(next_round_state)
-      valid_actions = self.emulator.generate_possible_actions(next_round_state)
-      # pp.pprint(valid_actions)
-      util[str(action)] = -1 * self.cfr(valid_actions, hole_card, next_round_state, my_prob, opp_prob * strategy[str(action)]) if round_state['next_player'] == 0 else -1 * self.cfr(valid_actions, hole_card, next_round_state, my_prob * strategy[str(action)], opp_prob)
-      print("Utility of performing this action: " + str(util[str(action)]))
-      # print("strategy: " + str(strategy[str(action)]))
-      info_set_util += strategy[str(action)] * util[str(action)]
-      print("Utility of this info set: " + str(info_set_util))
-    for action in valid_actions:
-      info_set.regret_sum[str(action)] += (opp_prob if round_state['next_player'] == 0 else my_prob) * (util[str(action)] - info_set_util)
-    return info_set_util
+  def is_terminal(self):
+    return False
 
-class InfoSet():
+  def inf_set(self):
+    return self._information_set
 
-  def __init__(self, info="", valid_actions=[]):
-    self.info = info
-    self.regret_sum = defaultdict(int)
-    self.strategy = defaultdict(int)
-    self.strategy_sum = defaultdict(int)
-    self.valid_actions = valid_actions
-    for action in self.valid_actions:
-      self.strategy[str(action)] = (1 / float(len(self.valid_actions)))
-      # print("Action: " + str(self.strategy[str(action)]))
+  def sample_one(self):
+    return random.choice(list(self.children.values()))
 
-  def get_strategy(self, realization_weight):
-    norm_sum = 0
-    for action in self.valid_actions:
-      self.strategy[str(action)] = max(self.regret_sum.get(str(action)), 0)
-      norm_sum += self.strategy[str(action)]
-    for action in self.valid_actions:
-      self.strategy[str(action)] = (self.strategy[str(action)] / norm_sum) if norm_sum > 0 else (1 / len(self.valid_actions))
-      self.strategy_sum[str(action)] += realization_weight * self.strategy[str(action)]
-    return self.strategy
+  def chance_prob(self):
+    return (1 / len(self.actions))  
 
-  def get_average_strategy(self):
-    norm_sum = 0
-    avg_strategy = defaultdict(int)
-    for action in self.valid_actions:
-      norm_sum += self.strategy_sum.get(str(action), 0)
-    for action in self.valid_actions:
-      avg_strategy[str(action)] = self.strategy_sum.get(str(action), 0) / norm_sum if norm_sum > 0 else 1 / len(self.valid_actions)
-    return avg_strategy
+  def compute_nash_equilibrium(self):
+    for child in self.children.values():
+      child.compute_nash_equilibrium()
+
+class PlayerNode(Node):
+
+  def __init__(self, parent, to_move, actions_history, actions):
+    super().__init__(parent = parent, to_move = to_move, actions = actions, actions_history = actions_history)
+    self._information_set = "".join(self.actions_history)
+    self.utility = []
+    if len(self.actions) > 0:
+      self.sigma = {action: 1. / len(self.actions) for action in self.actions}
+      self.cumulative_sigma = {action: 1e-5 for action in self.actions}
+      self.cumulative_regret = {action: 1e-5 for action in self.actions}
+      self.nash_equilibrium = {action: 1e-5 for action in self.actions}
+
+  def add_child(self, game_state, emulator, reach_a, reach_b):
+    # print(self.actions)
+    if self.is_terminal():
+      # print("here")
+      reward = game_state['table'].seats.players[0].stack - 100 #Make better
+      self.utility.append(reward)
+      return self.evaluation()
+    else:
+      value = 0.
+      csu = {}
+      for a in self.actions:
+        child_reach_a = reach_a * (self.sigma[a] if self.to_move == 0 else 1)
+        child_reach_b = reach_b * (self.sigma[a] if self.to_move == 1 else 1)
+        next_game_state, _ = emulator.apply_action(game_state, a)
+        if next_game_state['street'] != game_state['street']:
+          streets = ["PREFLOP,", "FLOP", "TURN", "RIVER", "SHOWDOWN"]
+          if next_game_state['street'] in [Const.Street.FLOP, Const.Street.TURN, Const.Street.RIVER]:
+            if a not in self.children.keys():
+              self.children[a] = ComChanceNode(self, self.actions_history + [a])
+            u = self.children[a].add_child(next_game_state, emulator, child_reach_a, child_reach_b)
+          else:
+            # print(a)
+            self.children[a] = PlayerNode(self, next_game_state['next_player'], self.actions_history + [a], [])
+            u = self.children[a].add_child(next_game_state, emulator, child_reach_a, child_reach_b)
+        else:
+          self.children[a] = PlayerNode(self, next_game_state['next_player'], self.actions_history + [a],
+            [action['action'] for action in emulator.generate_possible_actions(next_game_state)])
+          u = self.children[a].add_child(next_game_state, emulator, child_reach_a, child_reach_b)
+        value +=  self.sigma[a] * u
+        csu[a] = u
+      (cfr_reach, reach) = (reach_b, reach_a) if self.to_move == 0 else (reach_a, reach_b)
+      rgrt_sum = 0.
+      for a in self.actions:
+        self.cumulative_regret[a] += (1 if self.to_move == 0 else -1) * cfr_reach * (csu[a] - value)
+        rgrt_sum += self.cumulative_regret[a] if self.cumulative_regret[a] > 0 else 0
+      for a in self.actions:
+        self.sigma[a] = max(self.cumulative_regret[a], 1e-5) / rgrt_sum if rgrt_sum > 0 else 1. / len(self.cumulative_regret.keys())
+        self.cumulative_sigma[a] += reach * self.sigma[a]
+      return value
+
+  def inf_set(self):
+    return self._information_set
+
+  def is_terminal(self):
+    return self.actions == []
+
+  def evaluation(self):
+    if self.is_terminal() == False:
+      raise RuntimeError("trying to evaluate non-terminal node")
+
+    return sum(self.utility) / len(self.utility)
+
+  def compute_nash_equilibrium(self):
+    if self.is_terminal():
+      return
+    sigma_sum = sum(self.cumulative_sigma.values())
+    self.nash_equilibrium = {a: self.cumulative_sigma[a] / sigma_sum for a in self.actions}
+    for child in self.children.values():
+      child.compute_nash_equilibrium()
 
 def setup_ai():
-  player = CFRPlayer(name="CFR", train=True)
-  player.train(1000)
-  return player
+  if path.exists('./tree-test3-10000.pkl'):
+    with open('tree-test3-10000.pkl', 'rb') as file:
+      return pickle.load(file)
+
+  root_node = RootChanceNode()
+  num_iterations = 10000
+  emulator = Emulator()
+  emulator.set_game_rule(player_num=2, max_round=1, small_blind_amount=5, ante_amount=1)
+  player_info = {"CFR1": {"name": "CFR-1", "stack": 100}, "CFR2": {"name": "CFR-2", "stack": 100}}
+  initial_state = emulator.generate_initial_game_state(player_info) 
+  for i in range(num_iterations):
+    game_state, events = emulator.start_new_round(initial_state)
+    root_node.add_child(game_state, emulator, 1, 1)
+
+  with open('tree-test3-10000-incomplete.pkl', 'wb') as file:
+    pickle.dump(root_node, file)
+
+  root_node.compute_nash_equilibrium()
+
+  with open('tree-test3-10000.pkl', 'wb') as file:
+    pickle.dump(root_node, file)
+
+  return root_node
+
+def get_prefix(hole_card):
+  card1, card2 = hole_card
+  if card1.is_pair(card2):
+    prefix = "PAIRED"
+  elif card1.is_suited(card2):
+    prefix = "SUITED"
+  else:
+    prefix = "NA"
+  return prefix
+
+def test_ai():
+  root_node = setup_ai()
+  emulator = Emulator()
+  emulator.set_game_rule(player_num=2, max_round=10, small_blind_amount=5, ante_amount=1)
+  earnings = []
+  for i in range(10):
+    game_worked = True
+    actions = ""
+    curr_node = root_node
+    player_info = {"CFR1": {"name": "CFR-1", "stack": 1000}, "Random2": {"name": "Random-2", "stack": 1000}}
+    initial_state = emulator.generate_initial_game_state(player_info)
+    game_state, events = emulator.start_new_round(initial_state)
+    curr_node = curr_node.children[get_prefix(game_state['table'].seats.players[0].hole_card)]
+    curr_street = 0
+    while(game_state['street'] <= 3):
+      if(game_state['street'] > curr_street):
+        curr_street = game_state['street']
+        try:
+          curr_node = curr_node.children[HandEvaluator.gen_hand_rank_info(game_state['table'].seats.players[0].hole_card,
+            game_state['table']._community_card)['hand']['strength']]
+        except Exception as e:
+          print(curr_node.children, curr_node.parent.inf_set(), actions)
+          print(e)
+          game_worked = False
+          break
+      if game_state['next_player'] == 0:
+        current_strategy = curr_node.nash_equilibrium
+        action = max(current_strategy, key=current_strategy.get) 
+        curr_node = curr_node.children[action]
+        game_state, events = emulator.apply_action(game_state, action)
+      else:
+        # current_strategy = curr_node.nash_equilibrium
+        # action = max(current_strategy, key=current_strategy.get) 
+        # curr_node = curr_node.children[action]
+        # game_state, events = emulator.apply_action(game_state, action)
+        # pa = [a['action'] for a in emulator.generate_possible_actions(game_state)]
+        # if 'raise' in pa:
+        #   action = 'raise'
+        # else:
+        action = random.choice(pa)
+        curr_node = curr_node.children[action]
+        game_state, events = emulator.apply_action(game_state, action)
+      actions += (action)
+    if game_worked:
+      earnings.append(game_state['table'].seats.players[0].stack - 1000)
+  print(earnings)
+
+if __name__ == '__main__':
+  test_ai()
+  
+
 
 
 

@@ -51,6 +51,13 @@ class Card:
 
     return rank + 13 * num
 
+
+  def is_pair(self, other_card):  
+    return self.rank == other_card.rank
+
+  def is_suited(self, other_card):
+    return self.suit == other_card.suit
+
   @classmethod
   def from_id(cls, card_id):
     suit, rank = 2, card_id
@@ -67,4 +74,5 @@ class Card:
     suit = inverse(cls.SUIT_MAP)[str_card[0].upper()]
     rank = inverse(cls.RANK_MAP)[str_card[1]]
     return cls(suit, rank)
+
 

@@ -1,5 +1,5 @@
 # Term Project
-This is my attempt to understand [CRR](https://poker.cs.ualberta.ca/publications/NIPS07-cfr.pdf) as a part of my final project for [CS3243 - Intro to AI](https://nusmods.com/modules/CS3243/introduction-to-artificial-intelligence). I would like to thank <https://int8.io/counterfactual-regret-minimization-for-poker-ai/> for the comprehensive explanation.  
+This is my attempt to understand [CFR](https://poker.cs.ualberta.ca/publications/NIPS07-cfr.pdf) as a part of my final project for [CS3243 - Intro to AI](https://nusmods.com/modules/CS3243/introduction-to-artificial-intelligence). I would like to thank <https://int8.io/counterfactual-regret-minimization-for-poker-ai/> for the comprehensive explanation.  
 
 In this limited version, the user only allowed to raise for four times in one round street. For more information about the project, one can head over to <https://github.com/changhongyan123/mypoker>.  
 

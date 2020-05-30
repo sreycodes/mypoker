@@ -1,75 +1,10 @@
-## Term Project
+# Term Project
+This is my attempt to understand [CRR](https://poker.cs.ualberta.ca/publications/NIPS07-cfr.pdf) as a part of my final project for [CS3243 - Intro to AI](https://nusmods.com/modules/CS3243/introduction-to-artificial-intelligence). I would like to thank <https://int8.io/counterfactual-regret-minimization-for-poker-ai/> for the comprehensive explanation.  
 
-### Set up environment
-using the conda or pyenv
+In this limited version, the user only allowed to raise for four times in one round street. For more information about the project, one can head over to <https://github.com/changhongyan123/mypoker>.  
 
-- conda create -n cs3243 python=2.7
-- source activate cs3243
+## Suggestions
 
-replace the cs3243 with whatever name you want
-https://conda.io/docs/index.html
-
-pip install PyPokerEngine  
-https://ishikota.github.io/PyPokerEngine/
-
-
-
-testing installmement:
-
-```
-import pypokerengine   
-print("hello world")
-```
-
-
-
-### Create your own player
-#### Example player
-
-```
-
-class RaisedPlayer(BasePokerPlayer):
-
-  def declare_action(self, valid_actions, hole_card, round_state):
-    #Implement your code
-    return action
-
-  def receive_game_start_message(self, game_info):
-    pass
-
-  def receive_round_start_message(self, round_count, hole_card, seats):
-    pass
-
-  def receive_street_start_message(self, street, round_state):
-    pass
-
-  def receive_game_update_message(self, action, round_state):
-    pass
-
-  def receive_round_result_message(self, winners, hand_info, round_state):
-    pass
-```
-#### Example Game
-The example game is in the example.py
-
-#### Information for the game
-```valid_actions```: vaild action list
-
-
-```
-[
-    { "action" : "fold"  },
-    { "action" : "call" },
-    { "action" : "raise" }
-]
-OR 
-[
-    {"action": "fold"},
-    {"action": "call"}
-]
-```
-
-In the limited version, the user only allowed to raise for four times in one round street.
-In each round, the players can only play raise four times.[In the pre-flop street, the big blind is considered as a Raise action.]
-
-Other information is similar to the PyPokerEngine,please check the detail about the parameter [link](https://github.com/ishikota/PyPokerEngine/blob/master/AI_CALLBACK_FORMAT.md)
+- Make AI better and extensive by changing branching scheme of chance nodes.
+- Find a way to generate all possible scenarios for the algorithm.
+- Compute nash equilibrium incrementally (will not make a huge time difference). The main time difference was obtained by playing / sampling games and updating the strategy together.
